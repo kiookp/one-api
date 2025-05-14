@@ -82,6 +82,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *me
 	// ✅ Refact.ai 特殊 User-Agent 设置
 	if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
 		req.Header.Set("User-Agent", "refact-lsp 0.10.19")
+		req.Header.Set("Accept", "application/json") // ✅ 确保非空值
 	}
 
 	// ✅ OpenRouter 附加头
@@ -89,11 +90,24 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *me
 		req.Header.Set("HTTP-Referer", "https://github.com/songquanpeng/one-api")
 		req.Header.Set("X-Title", "One API")
 	}
-    fmt.Println("BaseURL:", meta.BaseURL)
-    fmt.Println("Headers:")
-    for key, values := range req.Header {
-        fmt.Printf("  %s: %v\n", key, values)
-    }
+
+	// ✅ Debug 输出请求信息
+	fmt.Println("==== Outgoing Request Debug Info ====")
+	fmt.Printf("URL     : %s\n", req.URL.String())
+	fmt.Printf("Method  : %s\n", req.Method)
+	fmt.Printf("Host    : %s\n", req.URL.Host)
+	fmt.Printf("Scheme  : %s\n", req.URL.Scheme)
+	fmt.Printf("Path    : %s\n", req.URL.Path)
+	if req.URL.RawQuery != "" {
+		fmt.Printf("Query   : %s\n", req.URL.RawQuery)
+	}
+	fmt.Println("Headers :")
+	for key, values := range req.Header {
+		for _, value := range values {
+			fmt.Printf("  %s: %s\n", key, value)
+		}
+	}
+	fmt.Println("=====================================")
 
 	return nil
 }
