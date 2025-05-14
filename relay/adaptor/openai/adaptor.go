@@ -89,6 +89,11 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *me
 		req.Header.Set("HTTP-Referer", "https://github.com/songquanpeng/one-api")
 		req.Header.Set("X-Title", "One API")
 	}
+    fmt.Println("BaseURL:", meta.BaseURL)
+    fmt.Println("Headers:")
+    for key, values := range req.Header {
+        fmt.Printf("  %s: %v\n", key, values)
+    }
 
 	return nil
 }
