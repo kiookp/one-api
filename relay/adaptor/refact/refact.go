@@ -1,6 +1,7 @@
 package refact
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -9,14 +10,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/relay/meta"
-	"github.com/songquanpeng/one-api/relay/model"
 )
 
 type RefactAdaptor struct{}
 
-func (a *RefactAdaptor) Init(m *meta.Meta) {
-	// 不需要特殊初始化
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
+
+func (a *RefactAdaptor) Init(m *meta.Meta) {}
 
 func (a *RefactAdaptor) GetRequestURL(m *meta.Meta) (string, error) {
 	return "https://inference.smallcloud.ai/v1/chat/completions", nil
@@ -29,19 +32,16 @@ func (a *RefactAdaptor) SetupRequestHeader(c *gin.Context, req *http.Request, m 
 	return nil
 }
 
-func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.GeneralOpenAIRequest) (any, error) {
-	body := map[string]any{
-		"model":       request.Model,
-		"messages":    request.Messages,
-		"stream":      request.Stream, // ✅ 支持流式
-		"temperature": request.Temperature,
-		"top_p":       request.TopP,
-		"max_tokens":  request.MaxTokens,
+func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request any) (any, error) {
+	req, ok := request.(map[string]any)
+	if !ok {
+		return nil, errors.New("invalid request format")
 	}
-	return body, nil
+	req["stream"] = true
+	return req, nil
 }
 
-func (a *RefactAdaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
+func (a *RefactAdaptor) ConvertImageRequest(request any) (any, error) {
 	return nil, errors.New("refact does not support image generation")
 }
 
@@ -55,14 +55,11 @@ func (a *RefactAdaptor) DoRequest(c *gin.Context, m *meta.Meta, body io.Reader) 
 	return http.DefaultClient.Do(req)
 }
 
-func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.Meta) (*model.Usage, *model.ErrorWithStatusCode) {
+func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.Meta) (any, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, &model.ErrorWithStatusCode{
-			StatusCode: resp.StatusCode,
-			Error:      model.Error{Message: "refact returned error"},
-		}
+		return nil, errors.New("refact returned non-200 status")
 	}
 
 	if m.IsStream {
@@ -77,34 +74,32 @@ func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.
 			if err != nil {
 				break
 			}
-			// 可根据 Refact 的返回内容格式进行包装
 			c.Writer.Write([]byte("data: " + string(line) + "\n\n"))
 			c.Writer.Flush()
 		}
 		return nil, nil
 	}
 
-	// 非流式处理如前
 	var result struct {
 		Choices []struct {
-			Message model.ChatMessage `json:"message"`
+			Message ChatMessage `json:"message"`
 		} `json:"choices"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil || len(result.Choices) == 0 {
-		return nil, &model.ErrorWithStatusCode{
-			StatusCode: 500,
-			Error:      model.Error{Message: "invalid refact response"},
-		}
+		return nil, errors.New("invalid response format")
 	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"choices": []gin.H{{"message": result.Choices[0].Message}},
+		"choices": []gin.H{
+			{"message": result.Choices[0].Message},
+		},
 	})
 	return nil, nil
 }
 
 func (a *RefactAdaptor) GetModelList() []string {
-	return []string{"gpt-4.1"}
+	return []string{"gpt-4.1", "code-complete-alpha"}
 }
 
 func (a *RefactAdaptor) GetChannelName() string {
