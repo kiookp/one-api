@@ -41,6 +41,8 @@ func ToAPIType(channelType int) int {
 		apiType = apitype.Replicate
 	case Proxy:
 		apiType = apitype.Proxy
+	case RefactAI:
+	    apiType = apitype.OpenAI  // Refact 接口兼容 OpenAI 格式
 	}
 
 	return apiType

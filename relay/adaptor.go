@@ -21,7 +21,9 @@ import (
 	"github.com/songquanpeng/one-api/relay/adaptor/vertexai"
 	"github.com/songquanpeng/one-api/relay/adaptor/xunfei"
 	"github.com/songquanpeng/one-api/relay/adaptor/zhipu"
+	"github.com/songquanpeng/one-api/relay/adaptor/refact"
 	"github.com/songquanpeng/one-api/relay/apitype"
+
 )
 
 func GetAdaptor(apiType int) adaptor.Adaptor {
@@ -40,6 +42,8 @@ func GetAdaptor(apiType int) adaptor.Adaptor {
 		return &gemini.Adaptor{}
 	case apitype.OpenAI:
 		return &openai.Adaptor{}
+	case apitype.Refact:
+        return &refact.RefactAdaptor{}
 	case apitype.PaLM:
 		return &palm.Adaptor{}
 	case apitype.Tencent:

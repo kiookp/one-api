@@ -20,6 +20,6 @@ const (
 	VertexAI
 	Proxy
 	Replicate
-
+    Refact // ✅ 新增 Refact 适配器类型
 	Dummy // this one is only for count, do not add any channel after this
 )
