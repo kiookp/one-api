@@ -149,6 +149,16 @@ func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) 
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Reader) (*http.Response, error) {
+	// ✅ 打印请求体内容
+	bodyBytes, _ := io.ReadAll(requestBody)
+	fmt.Println("==== 🔍 Outgoing JSON Payload ====")
+	fmt.Println(string(bodyBytes))
+	fmt.Println("==================================")
+
+	// ✅ 重建 Reader（因为上面已经读取了一遍）
+	requestBody = io.NopCloser(strings.NewReader(string(bodyBytes)))
+
+	// ✅ 正常请求继续
 	return adaptor.DoRequestHelper(a, c, meta, requestBody)
 }
 
