@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/relay/meta"
+	"github.com/songquanpeng/one-api/relay/model"
 )
 
 type RefactAdaptor struct{}
@@ -40,7 +41,7 @@ func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request an
 	return req, nil
 }
 
-func (a *RefactAdaptor) ConvertImageRequest(request any) (any, error) {
+func (a *RefactAdaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
 	return nil, errors.New("refact does not support image generation")
 }
 
