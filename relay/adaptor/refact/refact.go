@@ -1,7 +1,7 @@
 package refact
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +19,12 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+type RefactRequest struct {
+	Model    string        `json:"model"`
+	Messages []ChatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+}
+
 func (a *RefactAdaptor) Init(m *meta.Meta) {}
 
 func (a *RefactAdaptor) GetRequestURL(m *meta.Meta) (string, error) {
@@ -33,112 +39,49 @@ func (a *RefactAdaptor) SetupRequestHeader(c *gin.Context, req *http.Request, m 
 }
 
 func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.GeneralOpenAIRequest) (any, error) {
-	body := map[string]any{
-		"model":       request.Model,
-		"messages":    request.Messages,
-		"stream":      c.Query("stream") == "true" || request.Stream, // 自动判断流式
-		"temperature": request.Temperature,
-		"top_p":       request.TopP,
-		"max_tokens":  request.MaxTokens,
+	messages := make([]ChatMessage, len(request.Messages))
+	for i, msg := range request.Messages {
+		messages[i] = ChatMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
 	}
-	return body, nil
+	return RefactRequest{
+		Model:    request.Model,
+		Messages: messages,
+		Stream:   request.Stream,
+	}, nil
 }
 
-func (a *RefactAdaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
-	return nil, errors.New("refact does not support image generation")
-}
-
-func (a *RefactAdaptor) DoRequest(c *gin.Context, m *meta.Meta, body io.Reader) (*http.Response, error) {
-	fullURL, _ := a.GetRequestURL(m)
-	req, err := http.NewRequest("POST", fullURL, body)
+func (a *RefactAdaptor) ConvertResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (*model.GeneralOpenAIResponse, error) {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	a.SetupRequestHeader(c, req, m)
-	return http.DefaultClient.Do(req)
+
+	var result model.GeneralOpenAIResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, errors.New("unmarshal_response_body_failed")
+	}
+	return &result, nil
 }
 
-func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.Meta) (*model.Usage, *model.ErrorWithStatusCode) {
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, &model.ErrorWithStatusCode{
-			StatusCode: resp.StatusCode,
-			Error:      model.Error{Message: "refact returned non-200 status"},
-		}
+func (a *RefactAdaptor) Do(c *gin.Context, request any, requestURL string, meta *meta.Meta) (*http.Response, error) {
+	jsonBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
 	}
 
-	if m.IsStream {
-		c.Status(http.StatusOK)
-		c.Header("Content-Type", "text/event-stream")
-		c.Header("Cache-Control", "no-cache")
-		c.Header("Connection", "keep-alive")
-
-		reader := bufio.NewReader(resp.Body)
-		for {
-			line, err := reader.ReadBytes('\n')
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return nil, &model.ErrorWithStatusCode{
-					StatusCode: http.StatusInternalServerError,
-					Error:      model.Error{Message: "error reading stream: " + err.Error()},
-				}
-			}
-			_, err = c.Writer.Write([]byte("data: " + string(line) + "\n\n"))
-			if err != nil {
-				return nil, &model.ErrorWithStatusCode{
-					StatusCode: http.StatusInternalServerError,
-					Error:      model.Error{Message: "error writing stream: " + err.Error()},
-				}
-			}
-			c.Writer.Flush()
-		}
-		// For streaming, usage might not be available; return nil or estimate if required
-		return nil, nil
+	req, err := http.NewRequest("POST", requestURL, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, err
+	}
+	err = a.SetupRequestHeader(c, req, meta)
+	if err != nil {
+		return nil, err
 	}
 
-	var result struct {
-		Choices []struct {
-			Message ChatMessage `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-	err := json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil || len(result.Choices) == 0 {
-		return nil, &model.ErrorWithStatusCode{
-			StatusCode: http.StatusInternalServerError,
-			Error:      model.Error{Message: "invalid response format: " + err.Error()},
-		}
-	}
-
-	// Construct usage data
-	usage := &model.Usage{
-		PromptTokens:     result.Usage.PromptTokens,
-		CompletionTokens: result.Usage.CompletionTokens,
-		TotalTokens:      result.Usage.TotalTokens,
-	}
-
-	// Return JSON response
-	c.JSON(http.StatusOK, gin.H{
-		"choices": []gin.H{
-			{"message": result.Choices[0].Message},
-		},
-		"usage": usage,
-	})
-
-	return usage, nil
-}
-
-func (a *RefactAdaptor) GetModelList() []string {
-	return []string{"gpt-4.1", "code-complete-alpha"}
-}
-
-func (a *RefactAdaptor) GetChannelName() string {
-	return "Refact.ai"
+	client := &http.Client{}
+	return client.Do(req)
 }
