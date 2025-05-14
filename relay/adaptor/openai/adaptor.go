@@ -133,29 +133,70 @@ func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Read
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (usage *model.Usage, err *model.ErrorWithStatusCode) {
-    if resp != nil {
-        // ✅ 打印响应状态和原始 Body 内容
-        fmt.Println("==== 🔁 Raw Response From Model Provider ====")
-        fmt.Println("Status:", resp.Status)
+	if resp != nil {
+		// ✅ 打印响应状态和原始 Body 内容
+		fmt.Println("==== 🔁 Raw Response From Model Provider ====")
+		fmt.Println("Status:", resp.Status)
 
-        bodyBytes, _ := io.ReadAll(resp.Body)
-        fmt.Println("Body:")
-        fmt.Println(string(bodyBytes))
-        fmt.Println("=============================================")
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyStr := string(bodyBytes)
+		fmt.Println("Body:")
+		fmt.Println(bodyStr)
+		fmt.Println("=============================================")
 
-        // ✅ 重建 resp.Body 供后续逻辑使用
-        resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
-    }
+		// ✅ Refact.ai 强制返回流式 data: {...} 格式，手动拼接内容
+		if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") && strings.HasPrefix(bodyStr, "data: ") {
+			var responseText string
+			lines := strings.Split(bodyStr, "\n")
+			for _, line := range lines {
+				if strings.HasPrefix(line, "data: ") && !strings.HasPrefix(line, "data: [DONE]") {
+					line = strings.TrimPrefix(line, "data: ")
+					var obj map[string]any
+					if err := json.Unmarshal([]byte(line), &obj); err == nil {
+						if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
+							if delta, ok := choices[0].(map[string]any)["delta"].(map[string]any); ok {
+								if content, ok := delta["content"].(string); ok {
+									responseText += content
+								}
+							}
+						}
+					}
+				}
+			}
 
-    // 由于已设置为非流式模式，直接处理非流式响应
-    switch meta.Mode {
-    case relaymode.ImagesGenerations:
-        err, _ = ImageHandler(c, resp)
-    default:
-        err, usage = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
-    }
+			// ✅ 返回 usage 和包装后的响应（伪造成非流式响应）
+			usage = ResponseText2Usage(responseText, meta.ActualModelName, meta.PromptTokens)
+			c.JSON(http.StatusOK, gin.H{
+				"id":      "one-api-refact",
+				"object":  "chat.completion",
+				"created": time.Now().Unix(),
+				"model":   meta.ActualModelName,
+				"choices": []gin.H{
+					{
+						"index": 0,
+						"message": gin.H{
+							"role":    "assistant",
+							"content": responseText,
+						},
+						"finish_reason": "stop",
+					},
+				},
+				"usage": usage,
+			})
+			return usage, nil
+		}
 
-    return
+		// ✅ 正常逻辑：重建 resp.Body
+		resp.Body = io.NopCloser(strings.NewReader(bodyStr))
+	}
+
+	switch meta.Mode {
+	case relaymode.ImagesGenerations:
+		err, _ = ImageHandler(c, resp)
+	default:
+		err, usage = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
+	}
+	return
 }
 
 func (a *Adaptor) GetModelList() []string {
