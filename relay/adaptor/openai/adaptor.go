@@ -117,7 +117,7 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 		return nil, errors.New("request is nil")
 	}
 
-	// 从上下文获取 meta 元信息
+	// 获取 meta
 	metaAny, exists := c.Get("meta")
 	if !exists {
 		return nil, errors.New("meta not found in context")
@@ -127,12 +127,12 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 		return nil, errors.New("invalid meta in context")
 	}
 
-	// ✅ 如果是 Refact.ai，强制关闭 stream 模式
 	if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
-		request.Stream = false
+		// Refact.ai 会返回 SSE，即使你不设置 stream
+		request.Stream = true
+		meta.IsStream = true // ✅ 让 One-API 使用 StreamHandler 解析 data: {...}
 	}
 
-	// ✅ 始终设置 usage 返回
 	if request.StreamOptions == nil {
 		request.StreamOptions = &model.StreamOptions{}
 	}
