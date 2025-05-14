@@ -2,7 +2,6 @@ package refact
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
