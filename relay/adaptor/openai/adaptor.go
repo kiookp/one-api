@@ -62,15 +62,8 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 		return alibailian.GetRequestURL(meta)
 	case channeltype.GeminiOpenAICompatible:
 		return geminiv2.GetRequestURL(meta)
-    default:
-        cleanPath := meta.RequestURLPath
-
-        // ✅ 支持 GitHub Copilot 的路径兼容性转换
-        if strings.Contains(meta.BaseURL, "github.ai") {
-            cleanPath = strings.Replace(cleanPath, "/v1", "/inference", 1)
-        }
-
-        return GetFullRequestURL(meta.BaseURL, cleanPath, meta.ChannelType), nil
+	default:
+		return GetFullRequestURL(meta.BaseURL, meta.RequestURLPath, meta.ChannelType), nil
 	}
 }
 
