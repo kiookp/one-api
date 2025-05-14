@@ -147,14 +147,20 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 		fmt.Println("=============================================")
 
 		// ✅ Refact.ai 强制返回流式 data: {...} 格式，手动拼接内容
-		if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") && strings.HasPrefix(bodyStr, "data: ") {
-			var responseText string
-			lines := strings.Split(bodyStr, "\n")
-			for _, line := range lines {
-				if strings.HasPrefix(line, "data: ") && !strings.HasPrefix(line, "data: [DONE]") {
-					line = strings.TrimPrefix(line, "data: ")
+		if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
+			trimmed := strings.TrimLeft(bodyStr, "\r\n\t ")
+			if strings.HasPrefix(trimmed, "data: ") {
+				var responseText string
+				for _, line := range strings.Split(trimmed, "\n") {
+					if strings.HasPrefix(line, "data: [DONE]") {
+						break
+					}
+					if !strings.HasPrefix(line, "data: ") {
+						continue
+					}
+					raw := strings.TrimPrefix(line, "data: ")
 					var obj map[string]any
-					if err := json.Unmarshal([]byte(line), &obj); err == nil {
+					if err := json.Unmarshal([]byte(raw), &obj); err == nil {
 						if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
 							if delta, ok := choices[0].(map[string]any)["delta"].(map[string]any); ok {
 								if content, ok := delta["content"].(string); ok {
@@ -164,32 +170,29 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 						}
 					}
 				}
-			}
-
-			// ✅ 返回 usage 和包装后的响应（伪造成非流式响应）
-			usage = ResponseText2Usage(responseText, meta.ActualModelName, meta.PromptTokens)
-			c.JSON(http.StatusOK, gin.H{
-				"id":      "one-api-refact",
-				"object":  "chat.completion",
-				"created": time.Now().Unix(),
-				"model":   meta.ActualModelName,
-				"choices": []gin.H{
-					{
+				usage = ResponseText2Usage(responseText, meta.ActualModelName, meta.PromptTokens)
+				c.JSON(http.StatusOK, gin.H{
+					"id":      meta.RequestID,
+					"object":  "chat.completion",
+					"created": time.Now().Unix(),
+					"model":   meta.ActualModelName,
+					"choices": []gin.H{{
 						"index": 0,
 						"message": gin.H{
 							"role":    "assistant",
 							"content": responseText,
 						},
 						"finish_reason": "stop",
-					},
-				},
-				"usage": usage,
-			})
-			return usage, nil
+					}},
+					"usage": usage,
+				})
+				return usage, nil
+			}
 		}
 
 		// ✅ 正常逻辑：重建 resp.Body
-		resp.Body = io.NopCloser(strings.NewReader(bodyStr))
+		rest := io.NopCloser(strings.NewReader(bodyStr))
+		resp.Body = rest
 	}
 
 	switch meta.Mode {
