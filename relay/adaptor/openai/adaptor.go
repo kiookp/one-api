@@ -69,15 +69,27 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *meta.Meta) error {
 	adaptor.SetupCommonRequestHeader(c, req, meta)
+
+	// ✅ Azure 特殊处理
 	if meta.ChannelType == channeltype.Azure {
 		req.Header.Set("api-key", meta.APIKey)
 		return nil
 	}
+
+	// ✅ 标准 Authorization 头
 	req.Header.Set("Authorization", "Bearer "+meta.APIKey)
+
+	// ✅ Refact.ai 特殊 User-Agent 设置
+	if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
+		req.Header.Set("User-Agent", "refact-lsp 0.10.19")
+	}
+
+	// ✅ OpenRouter 附加头
 	if meta.ChannelType == channeltype.OpenRouter {
 		req.Header.Set("HTTP-Referer", "https://github.com/songquanpeng/one-api")
 		req.Header.Set("X-Title", "One API")
 	}
+
 	return nil
 }
 
