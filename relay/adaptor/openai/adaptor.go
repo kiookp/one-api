@@ -163,13 +163,27 @@ func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Read
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (usage *model.Usage, err *model.ErrorWithStatusCode) {
+	if resp != nil {
+		// ✅ 打印响应状态和原始 Body 内容
+		fmt.Println("==== 🔁 Raw Response From Model Provider ====")
+		fmt.Println("Status:", resp.Status)
+
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		fmt.Println("Body:")
+		fmt.Println(string(bodyBytes))
+		fmt.Println("=============================================")
+
+		// ✅ 重建 resp.Body 供后续逻辑使用
+		resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
+	}
+
 	if meta.IsStream {
 		var responseText string
 		err, responseText, usage = StreamHandler(c, resp, meta.Mode)
 		if usage == nil || usage.TotalTokens == 0 {
 			usage = ResponseText2Usage(responseText, meta.ActualModelName, meta.PromptTokens)
 		}
-		if usage.TotalTokens != 0 && usage.PromptTokens == 0 { // some channels don't return prompt tokens & completion tokens
+		if usage.TotalTokens != 0 && usage.PromptTokens == 0 {
 			usage.PromptTokens = meta.PromptTokens
 			usage.CompletionTokens = usage.TotalTokens - meta.PromptTokens
 		}
