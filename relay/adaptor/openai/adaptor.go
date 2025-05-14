@@ -102,32 +102,16 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Request, meta *me
 }
 
 func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.GeneralOpenAIRequest) (any, error) {
-    if request == nil {
-        return nil, errors.New("request is nil")
-    }
+	if request == nil {
+		return nil, errors.New("request is nil")
+	}
 
-    // 获取 meta
-    metaAny, exists := c.Get("meta")
-    if !exists {
-        return nil, errors.New("meta not found in context")
-    }
-    meta, ok := metaAny.(*meta.Meta)
-    if !ok {
-        return nil, errors.New("invalid meta in context")
-    }
+	if request.StreamOptions == nil {
+		request.StreamOptions = &model.StreamOptions{}
+	}
+	request.StreamOptions.IncludeUsage = true
 
-    // 不再强制设置为流式模式
-    // if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
-    //     request.Stream = true
-    //     meta.IsStream = true
-    // }
-
-    if request.StreamOptions == nil {
-        request.StreamOptions = &model.StreamOptions{}
-    }
-    request.StreamOptions.IncludeUsage = true
-
-    return request, nil
+	return request, nil
 }
 
 func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
