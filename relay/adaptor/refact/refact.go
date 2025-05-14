@@ -58,11 +58,14 @@ func (a *RefactAdaptor) DoRequest(c *gin.Context, m *meta.Meta, body io.Reader) 
 	return http.DefaultClient.Do(req)
 }
 
-func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.Meta) (any, error) {
+func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.Meta) (*model.Usage, *model.ErrorWithStatusCode) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("refact returned non-200 status")
+		return nil, &model.ErrorWithStatusCode{
+			StatusCode: resp.StatusCode,
+			Error:      model.Error{Message: "refact returned non-200 status"},
+		}
 	}
 
 	if m.IsStream {
@@ -75,11 +78,24 @@ func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.
 		for {
 			line, err := reader.ReadBytes('\n')
 			if err != nil {
-				break
+				if err == io.EOF {
+					break
+				}
+				return nil, &model.ErrorWithStatusCode{
+					StatusCode: http.StatusInternalServerError,
+					Error:      model.Error{Message: "error reading stream: " + err.Error()},
+				}
 			}
-			c.Writer.Write([]byte("data: " + string(line) + "\n\n"))
+			_, err = c.Writer.Write([]byte("data: " + string(line) + "\n\n"))
+			if err != nil {
+				return nil, &model.ErrorWithStatusCode{
+					StatusCode: http.StatusInternalServerError,
+					Error:      model.Error{Message: "error writing stream: " + err.Error()},
+				}
+			}
 			c.Writer.Flush()
 		}
+		// For streaming, usage might not be available; return nil or estimate if required
 		return nil, nil
 	}
 
@@ -87,18 +103,36 @@ func (a *RefactAdaptor) DoResponse(c *gin.Context, resp *http.Response, m *meta.
 		Choices []struct {
 			Message ChatMessage `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	err := json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil || len(result.Choices) == 0 {
-		return nil, errors.New("invalid response format")
+		return nil, &model.ErrorWithStatusCode{
+			StatusCode: http.StatusInternalServerError,
+			Error:      model.Error{Message: "invalid response format: " + err.Error()},
+		}
 	}
 
+	// Construct usage data
+	usage := &model.Usage{
+		PromptTokens:     result.Usage.PromptTokens,
+		CompletionTokens: result.Usage.CompletionTokens,
+		TotalTokens:      result.Usage.TotalTokens,
+	}
+
+	// Return JSON response
 	c.JSON(http.StatusOK, gin.H{
 		"choices": []gin.H{
 			{"message": result.Choices[0].Message},
 		},
+		"usage": usage,
 	})
-	return nil, nil
+
+	return usage, nil
 }
 
 func (a *RefactAdaptor) GetModelList() []string {
