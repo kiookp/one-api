@@ -129,14 +129,13 @@ func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Read
 	fmt.Println(string(bodyBytes))
 	fmt.Println("==================================")
 
-	requestBody = io.NopCloser(strings.NewReader(string(bodyBytes)))
-
-	return adaptor.DoRequestHelper(a, c, meta, requestBody)
+	restBody := io.NopCloser(strings.NewReader(string(bodyBytes)))
+	return adaptor.DoRequestHelper(a, c, meta, restBody)
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (usage *model.Usage, err *model.ErrorWithStatusCode) {
 	if resp != nil {
-		// ✅ 打印响应状态和原始 Body 内容
+		// Print raw response
 		fmt.Println("==== 🔁 Raw Response From Model Provider ====")
 		fmt.Println("Status:", resp.Status)
 
@@ -146,7 +145,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 		fmt.Println(bodyStr)
 		fmt.Println("=============================================")
 
-		// ✅ Refact.ai 强制返回流式 data: {...} 格式，手动拼接内容
+		// Handle SSE for smallcloud.ai
 		if strings.Contains(meta.BaseURL, "inference.smallcloud.ai") {
 			trimmed := strings.TrimLeft(bodyStr, "\r\n\t ")
 			if strings.HasPrefix(trimmed, "data: ") {
@@ -160,7 +159,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 					}
 					raw := strings.TrimPrefix(line, "data: ")
 					var obj map[string]any
-					if err := json.Unmarshal([]byte(raw), &obj); err == nil {
+					if e := json.Unmarshal([]byte(raw), &obj); e == nil {
 						if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
 							if delta, ok := choices[0].(map[string]any)["delta"].(map[string]any); ok {
 								if content, ok := delta["content"].(string); ok {
@@ -172,7 +171,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 				}
 				usage = ResponseText2Usage(responseText, meta.ActualModelName, meta.PromptTokens)
 				c.JSON(http.StatusOK, gin.H{
-					"id":      meta.RequestID,
+					"id":      "one-api-refact",
 					"object":  "chat.completion",
 					"created": time.Now().Unix(),
 					"model":   meta.ActualModelName,
@@ -190,7 +189,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 			}
 		}
 
-		// ✅ 正常逻辑：重建 resp.Body
+		// Restore body for normal handling
 		rest := io.NopCloser(strings.NewReader(bodyStr))
 		resp.Body = rest
 	}
