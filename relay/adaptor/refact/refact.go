@@ -32,13 +32,16 @@ func (a *RefactAdaptor) SetupRequestHeader(c *gin.Context, req *http.Request, m 
 	return nil
 }
 
-func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request any) (any, error) {
-	req, ok := request.(map[string]any)
-	if !ok {
-		return nil, errors.New("invalid request format")
+func (a *RefactAdaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.GeneralOpenAIRequest) (any, error) {
+	body := map[string]any{
+		"model":       request.Model,
+		"messages":    request.Messages,
+		"stream":      c.Query("stream") == "true" || request.Stream, // 自动判断流式
+		"temperature": request.Temperature,
+		"top_p":       request.TopP,
+		"max_tokens":  request.MaxTokens,
 	}
-	req["stream"] = true
-	return req, nil
+	return body, nil
 }
 
 func (a *RefactAdaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
